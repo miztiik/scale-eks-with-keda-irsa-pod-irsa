@@ -15,8 +15,8 @@ setuptools.setup(
 
     author="author",
 
-    package_dir={"": "scale_eks_with_keda_irsa_pod_irsa"},
-    packages=setuptools.find_packages(where="scale_eks_with_keda_irsa_pod_irsa"),
+    package_dir={"": "stacks"},
+    packages=setuptools.find_packages(where="stacks"),
 
     install_requires=[
         "aws-cdk.core==1.108.0",
