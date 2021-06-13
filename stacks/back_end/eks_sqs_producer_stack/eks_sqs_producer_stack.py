@@ -156,7 +156,7 @@ class EksSqsProducerStack(cdk.Stack):
                                     "-c"
                                 ],
                                 "args": [
-                                    "wget https://raw.githubusercontent.com/miztiik/scale-eks-with-keda/master/stacks/back_end/eks_sqs_producer_stack/lambda_src/stream_data_producer.py;pip3 install --user boto3;python3 stream_data_producer.py;"
+                                    "wget https://raw.githubusercontent.com/miztiik/scale-eks-with-keda-irsa-pod-irsa/master/stacks/back_end/eks_sqs_producer_stack/lambda_src/stream_data_producer.py;pip3 install --user boto3;python3 stream_data_producer.py;"
                                 ],
                                 "env": [
                                     {

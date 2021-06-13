@@ -1,4 +1,4 @@
-# Event Driven Autoscaling on Kubernetes with KEDA Scalars
+# Event Driven Autoscaling on Kubernetes with KEDA Scalars and IRSA
 
 The developer at Mystique Unicorn are interested in building their application using event-driven architectural pattern to process streaming data. For those who are unfamiliar, _An event-driven architecture uses events to trigger and communicate between decoupled services and is common in modern applications built with microservices. An event is a change in state, or an update, like an item being placed in a shopping cart on an e-commerce website._
 
@@ -22,7 +22,18 @@ We will build a EKS cluster with a managed node groups running `2` _t2.medium_ n
 - **SQS Queue** - A standard SQS queue with a visibility timeout of `30` seconds, This allows our consumer `30` seconds to successfully process message and delete them from the queue.
 - **Sales Events Bucket** - Persistent storage for the consumer to store the events.
 - **Producer** - A deployment running an generic container `python:3.8.10-alpine`. The producer code is pulled from this github directly. It will produce `1` message every `2` seconds and runs to produce a maximum of `10000` messages. Being a _deployment_, it will be restarted and goes on to produce the next batch of _10000_ messages.
+  - Kubernetes Service Account annotated with AWS IAM Role Arn
+  - Role permissions to write to SQS Queue
 - **Consumer** - A deployment running generic container `python:3.8.10-alpine`. The consumer code is pulled from this github directly. Every `10` seconds it will process messages in batches of `5`. The incoming messages will be stored persistently in _Sales Events Bucket_. It will process a maximum of `10000` messages.
+
+  - Kubernetes Service Account annotated with AWS IAM Role Arn
+  - Role has permissions to read messages, delete messages, get queue length from SQS Queue and also permissions to write to S3 bucket
+  - Has a trust relationship to allow any user to assume this role. <sup><sub>Ideally, I would like this to be restricted to only KEDA IAM Role. But for some reason there is no way to append a roles trust policy using cloudformation[14],[15]. For now, i we are not allowing assume permissions for account _root_.</sub></sup>
+
+- **KEDA** - KEDA will potentially be used to scale multiple applications running inside our EKS cluster. This can lead to overly permissive privileges being added to the _keda-operator_ role. To avoid that, we will not provision any permissions directly to KEDA, Instead we will allow it to assume the role of the application and inherit its privileges. This way, KEDA operators do not have to worry about managing permissions for multiple applications and application owners retain control on who or what accesses their application.
+
+  - Kubernetes Service Account annotated with AWS IAM Role Arn
+  - Role has permissions to only to assume _Consumer SQS Role_
 
   **Note**:
 
@@ -252,7 +263,7 @@ We will build a EKS cluster with a managed node groups running `2` _t2.medium_ n
          --version ${KEDA_VERSION} \
          --set serviceAccount.create=false \
          --set serviceAccount.name=keda-operator \
-         --set  podSecurityContext.fsGroup=1001 \
+         --set podSecurityContext.fsGroup=1001 \
          --set podSecurityContext.runAsGroup=1001 \
          --set podSecurityContext.runAsUser=1001  \
          --namespace keda
@@ -286,37 +297,50 @@ We will build a EKS cluster with a managed node groups running `2` _t2.medium_ n
 
    - **Deploy SQS Consumer Scalar**
 
-     Now that we have all the necessary pieces to deploy our _consumer_ scaler. Here is my manifest for the scalar.The same yaml is also in the repo under the directory `stacks/back_end/keda_scalers/keda-sqs-consumer-scalar-with-irsa.yml` Let us walk through the specification.
+     Now that we have all the necessary pieces to deploy our _consumer_ scaler. Here is my manifest for the scalar.The same yaml is also in the repo under the directory `stacks/back_end/keda_scalers/keda-sqs-consumer-scalar-with-pod-irsa.yml` Let us walk through the specification.
 
      ```yaml
-     ---
-     apiVersion: keda.sh/v1alpha1 # https://keda.sh/docs/2.0/concepts/scaling-deployments/
-     kind: ScaledObject
-     metadata:
-       name: sales-events-consumer-scaler
-       namespace: sales-events-consumer-ns
-       labels:
-         app: sales-events-consumer
-         deploymentName: sales-events-consumer
-     spec:
-       scaleTargetRef:
-         kind: Deployment
-         name: sales-events-consumer
-       minReplicaCount: 1
-       maxReplicaCount: 50
-       pollingInterval: 30
-       cooldownPeriod: 500
-       triggers:
-         - type: aws-sqs-queue
-           metadata:
-             queueURL: https://sqs.us-east-2.amazonaws.com/111122223333/reliable_message_q
-             queueLength: "50"
-             awsRegion: "us-east-2"
-             identityOwner: operator
-     ---
+      ---
+      apiVersion: keda.sh/v1alpha1
+      kind: TriggerAuthentication
+      metadata:
+        name: sales-events-consumer-trigger-auth
+        namespace: sales-events-consumer-ns
+      spec:
+        podIdentity:
+          provider: aws-eks
+      ---
+      apiVersion: keda.sh/v1alpha1 # https://keda.sh/docs/2.0/concepts/scaling-deployments/
+      kind: ScaledObject
+      metadata:
+        name: sales-events-consumer-scaler
+        namespace: sales-events-consumer-ns
+        labels:
+          app: sales-events-consumer
+          deploymentName: sales-events-consumer
+      spec:
+        scaleTargetRef:
+          kind: Deployment
+          name: sales-events-consumer
+        minReplicaCount: 1
+        maxReplicaCount: 50
+        pollingInterval: 10
+        cooldownPeriod:  500
+        triggers:
+        - type: aws-sqs-queue
+          metadata:
+            queueURL: https://sqs.us-east-1.amazonaws.com/111122223333/reliable_message_q
+            queueLength: "10"
+            awsRegion: "us-east-1"
+            identityOwner: pod
+          authenticationRef:
+            name: sales-events-consumer-trigger-auth
+      ---
      ```
 
-     KEDA SQS Scalar<sup>[12]</sup> is a kubernetes object of kind `ScaledObject`. We provide the target deployment to scale with _min_, _max_ values. We also need to specify the `queueURL`, `queueLength` and `awsRegion`. You should be able to find the `ReliableMessageQueueUrl` from the `sales-events-producer-stack` outputs.
+     **KEDA SQS Scalar**<sup>[12]</sup> is a kubernetes object of kind `ScaledObject`. We provide the target deployment to scale with _min_, _max_ values. We also need to specify the `queueURL`, `queueLength` and `awsRegion`. You should be able to find the `ReliableMessageQueueUrl` from the `sales-events-producer-stack` outputs.
+
+     The important thing to note here is that, we are delegating the authentication and authorization to the target using `identityOwner: pod` and by configuring an authentication reference to use `aws-eks`, which in turn uses IRSA.
 
      Once you have updated those values to match your environment, lets deploy this manifest,
 
@@ -333,7 +357,8 @@ We will build a EKS cluster with a managed node groups running `2` _t2.medium_ n
      **Deploy KEDA Scalar**:
 
      ```sh
-     $] kubectl apply -f stacks/back_end/keda_scalers/keda-sqs-consumer-scalar-with-irsa.yml
+     $] kubectl apply -f stacks/back_end/keda_scalers/keda-sqs-consumer-scalar-with-pod-irsa.yml
+     triggerauthentication.keda.sh/sales-events-consumer-trigger-auth created
      scaledobject.keda.sh/sales-events-consumer-scaler created
      ```
 
@@ -457,7 +482,9 @@ Thank you for your interest in contributing to our project. Whether it is a bug 
 1. [AWS Docs: Amazon SQS metrics][10]
 1. [HELM Docs: Install Helm][11]
 1. [KEDA Docs: AWS SQS Queue Scalar][12]
-1. [Blog: Kubernetes Network Policies][12]
+1. [Blog: Kubernetes Network Policies][13]
+1. [AWS API Docs: UpdateAssumeRolePolicy][14]
+1. [AWS CLI Docs: update-assume-role-policy][15]
 
 ### 🏷️ Metadata
 
@@ -478,6 +505,8 @@ Thank you for your interest in contributing to our project. Whether it is a bug 
 [11]: https://helm.sh/docs/intro/install/
 [12]: https://keda.sh/docs/2.3/scalers/aws-sqs/
 [13]: https://faun.pub/control-traffic-flow-to-and-from-kubernetes-pods-with-network-policies-bc384c2d1f8c
+[14]: https://docs.aws.amazon.com/IAM/latest/APIReference/API_UpdateAssumeRolePolicy.html
+[15]: https://awscli.amazonaws.com/v2/documentation/api/latest/reference/iam/update-assume-role-policy.html
 [100]: https://www.udemy.com/course/aws-cloud-security/?referralCode=B7F1B6C78B45ADAF77A9
 [101]: https://www.udemy.com/course/aws-cloud-security-proactive-way/?referralCode=71DC542AD4481309A441
 [102]: https://www.udemy.com/course/aws-cloud-development-kit-from-beginner-to-professional/?referralCode=E15D7FB64E417C547579
