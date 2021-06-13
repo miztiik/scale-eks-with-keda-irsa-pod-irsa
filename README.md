@@ -4,7 +4,7 @@ The developer at Mystique Unicorn are interested in building their application u
 
 In this application, they will have their physical stores, send a stream _sales_ and _inventory_ related events to a central location(a message queue), where multiple downstream systems are consuming these events. The _consumers_ are running on kubernetes pods.
 
-![Miztiik Automation: Event Processor On EKS Architecture](images/miztiik_automation_scale_eks_with_keda_architecture_000.png)
+![Miztiik Automation: Event Processor On EKS Architecture](images/miztiik_automation_scale_eks_with_keda_pod_irsa_architecture_01.png)
 
 Native kubernetes Horizontal Pod Autoscaler (HPA) scales resources based on a provided metric (usually CPU or Memory utilization), however it does not have native support for event-sources(_yet_). As such, there is a delay in scale-up of new Pods while the event source gets populated with events. In this case the queue length increases to undesirable levels before new consumer pods are added to the deployment. AWS SQS exposes a metric `ApproximateNumberOfMessagesVisible` - Which is the number of messages available for retrieval from the queue. They are interested in using metrics like this to scale the _consumers_.
 
