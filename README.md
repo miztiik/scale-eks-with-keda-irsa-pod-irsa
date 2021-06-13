@@ -297,7 +297,7 @@ We will build a EKS cluster with a managed node groups running `2` _t2.medium_ n
 
    - **Deploy SQS Consumer Scalar**
 
-     Now that we have all the necessary pieces to deploy our _consumer_ scaler. Here is my manifest for the scalar.The same yaml is also in the repo under the directory `stacks/back_end/keda_scalers/keda-sqs-consumer-scalar-with-pod-irsa.yml` Let us walk through the specification.
+     Now that we have all the necessary pieces to deploy our _consumer_ scaler. Here is my manifest for the scalar. The same yaml is also in the repo under the directory `stacks/back_end/keda_scalers/keda-sqs-consumer-scalar-with-pod-irsa.yml`. You can find the `queueURL` in the outputs section of Let us walk through the specification.
 
      ```yaml
       ---
@@ -338,7 +338,7 @@ We will build a EKS cluster with a managed node groups running `2` _t2.medium_ n
       ---
      ```
 
-     **KEDA SQS Scalar**<sup>[12]</sup> is a kubernetes object of kind `ScaledObject`. We provide the target deployment to scale with _min_, _max_ values. We also need to specify the `queueURL`, `queueLength` and `awsRegion`. You should be able to find the `ReliableMessageQueueUrl` from the `sales-events-producer-stack` outputs.
+     **KEDA SQS Scalar**<sup>[12]</sup> is a kubernetes object of kind `ScaledObject`. We provide the target deployment to scale with _min_, _max_ values. We also need to specify the `queueURL`, `queueLength` and `awsRegion`. You should be able to find the `ReliableMessageQueueUrl` from the `sales-events-producer-stack` outputs, Use region mentioned in your queue url.
 
      The important thing to note here is that, we are delegating the authentication and authorization to the target using `identityOwner: pod` and by configuring an authentication reference to use `aws-eks`, which in turn uses IRSA.
 
