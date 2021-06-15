@@ -27,6 +27,7 @@ kubectl describe pods keda-operator-7d697b9c5b-nvbmj -n keda | grep -i aws   # e
 You can refer to KEDA Docs [2]
 
 ```sh
+# helm uninstall keda -n keda
 kubectl delete -f https://github.com/kedacore/keda/releases/download/v2.3.0/keda-2.3.0.yaml
 kubectl delete -f https://raw.githubusercontent.com/kedacore/keda/v2.3.0/config/crd/bases/keda.sh_scaledobjects.yaml
 kubectl delete -f https://raw.githubusercontent.com/kedacore/keda/v2.3.0/config/crd/bases/keda.sh_scaledjobs.yaml
