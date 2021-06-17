@@ -95,9 +95,6 @@ class EksKedaStack(cdk.Stack):
             resources=[f"{_events_processor_svc_accnt_role.role_arn}"]
         ))
 
-
-
-
         keda_svc_accnt_manifest = {
             "apiVersion": "v1",
             "kind": "ServiceAccount",
